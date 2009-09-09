@@ -1,14 +1,76 @@
+#! /usr/bin/env ruby
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2009 Sauce Labs Inc
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# 'Software'), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+# CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 require 'rubygems'
 require 'net/ssh'
 require 'net/ssh/gateway'
 require 'saucerest'
+require 'optparse'
 
-username = ""
-access_key = ""
-domains = ['www.1234.dev']
-local_port = 5000
-local_host = "localhost"
-remote_port = 80
+options = {}
+op = OptionParser.new do |opts|
+  opts.banner = "Usage: tunnel.rb [options] <username> <access key> <local host> <local port> <remote port> <remote domain> [<remote domain>...]"
+  opts.separator ""
+  opts.separator "Specific options:"
+
+  opts.on("-d", "--daemonize", "background the process once the tunnel is established") do |d|
+    options[:daemonize] = d
+  end
+
+  opts.on("-p", "--pidfile FILE", "when used with --daemonize, write backgrounded Process ID to FILE [default: %default]") do |p|
+    options[:pidfile] = p
+  end
+
+  opts.on("-r", "--readyfile FILE", "create FILE when the tunnel is ready") do |r| 
+    options[:readyfile] = r
+  end
+
+  opts.on("-s", "--shutdown", "shutdown any existing tunnel machines using one or more requested domain names") do |s| 
+    options[:shutdown] = s
+  end
+end
+
+opts = op.parse!
+
+# TODO: Analize the options inserted and do something with them
+# p options
+
+num_missing = 6 - opts.length
+if num_missing > 0
+  puts 'Missing %d required argument(s)' % [num_missing]
+  puts
+  puts op
+  exit
+end
+
+username = opts[0]
+access_key = opts[1]
+local_host = opts[2]
+local_port = Integer(opts[3])
+remote_port = Integer(opts[4])
+domains = opts[5..-1]
+
 
 # http://groups.google.com/group/capistrano/browse_thread/thread/455c0c8a6faa9cc8?pli=1
 class Net::SSH::Gateway
@@ -48,22 +110,29 @@ end
 
 sauce = SauceREST::Client.new "https://#{username}:#{access_key}@saucelabs.com/rest/#{username}/"
 
+puts "Launching tunnel machine..."
 response = sauce.create(:tunnel,
                         'DomainNames' => domains)
-p response
+
+if  response.has_key? 'error' 
+  puts "Error: %s" % [response['error']]
+  exit
+end
+
 tunnel_id = response['id']
+puts "Tunnel id: %s" % tunnel_id
+
 begin
   interval = 10
   timeout = 600
   t = 0
   while t < timeout
     tunnel = sauce.get :tunnel, tunnel_id
-    p tunnel
+    puts "Status: %s" % tunnel['Status']
     if tunnel['Status'] == 'running'
       break
     end
 
-    puts "sleeping..."
     sleep interval
     t += interval
   end
@@ -76,6 +145,9 @@ begin
     sleep 1500
   end
   gateway.shutdown!
+rescue Interrupt
+  nil
+
 ensure
   puts "Aborted -- shutting down tunnel"
   sauce.delete :tunnel, tunnel_id
