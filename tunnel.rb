@@ -34,13 +34,13 @@ op = OptionParser.new do |opts|
   opts.separator ""
   opts.separator "Specific options:"
 
-  opts.on("-d", "--daemonize", "background the process once the tunnel is established") do |d|
-    options[:daemonize] = d
-  end
-
-  opts.on("-p", "--pidfile FILE", "when used with --daemonize, write backgrounded Process ID to FILE [default: %default]") do |p|
-    options[:pidfile] = p
-  end
+#  opts.on("-d", "--daemonize", "background the process once the tunnel is established") do |d|
+#    options[:daemonize] = d
+#  end
+#
+#  opts.on("-p", "--pidfile FILE", "when used with --daemonize, write backgrounded Process ID to FILE [default: %default]") do |p|
+#    options[:pidfile] = p
+#  end
 
   opts.on("-r", "--readyfile FILE", "create FILE when the tunnel is ready") do |r| 
     options[:readyfile] = r
@@ -71,6 +71,22 @@ local_port = Integer(opts[3])
 remote_port = Integer(opts[4])
 domains = opts[5..-1]
 
+sauce = SauceREST::Client.new "https://#{username}:#{access_key}@saucelabs.com/rest/#{username}/"
+
+if options[:shutdown]
+  puts "Searching for existing tunnels using requested domains..."
+  tunnels = sauce.list :tunnel
+  for tunnel in tunnels
+    for domain in domains
+      if tunnel['DomainNames'].include?(domain)
+        puts "tunnel %s is currenty using requested domain %s" % [
+          tunnel['_id'], domain]
+        puts "shutting down tunnel %s" % tunnel['_id']
+        sauce.delete :tunnel, tunnel['_id'] 
+      end
+    end
+  end
+end
 
 # http://groups.google.com/group/capistrano/browse_thread/thread/455c0c8a6faa9cc8?pli=1
 class Net::SSH::Gateway
@@ -108,7 +124,6 @@ class Net::SSH::Gateway
   end
 end
 
-sauce = SauceREST::Client.new "https://#{username}:#{access_key}@saucelabs.com/rest/#{username}/"
 
 puts "Launching tunnel machine..."
 response = sauce.create(:tunnel,
