@@ -153,9 +153,14 @@ begin
   end
 
   gateway = Net::SSH::Gateway.new(tunnel['Host'], username,
-                                  options={:password => access_key})
+                                  {:password => access_key})
   gateway.open_remote(local_port, local_host, remote_port, "0.0.0.0") do |rp, rh|
     puts "ssh remote tunnel opened"
+    if options.has_key?(:readyfile) 
+      File.open( options[:readyfile], "w" ) do |the_file|
+        the_file.puts "ready"
+      end 
+    end
     # instead of sleeping, you could launch your tests here
     sleep 1500
   end
@@ -164,6 +169,6 @@ rescue Interrupt
   nil
 
 ensure
-  puts "Aborted -- shutting down tunnel"
+  puts "Aborted -- shutting down tunnel machine"
   sauce.delete :tunnel, tunnel_id
 end
