@@ -30,7 +30,7 @@ require 'optparse'
 
 options = {}
 op = OptionParser.new do |opts|
-  opts.banner = "Usage: tunnel.rb [options] <username> <access key> <local host> <local port> <remote port> <remote domain> [<remote domain>...]"
+  opts.banner = "Usage: tunnel.rb [options] <username> <access key> <local host> <local port>:<remote port>[,<local port>:<remote port>] <remote domain>,[<remote domain>...]"
   opts.separator ""
   opts.separator "Specific options:"
 
@@ -49,6 +49,10 @@ op = OptionParser.new do |opts|
   opts.on("-s", "--shutdown", "shutdown any existing tunnel machines using one or more requested domain names") do |s| 
     options[:shutdown] = s
   end
+
+  opts.on("--diagnostic", "using this option, we will run a set of tests to make sure the arguments given are correct. If all works, will open the tunnels in debug mode") do |d| 
+    options[:diagnostic] = d
+  end
 end
 
 opts = op.parse!
@@ -56,7 +60,7 @@ opts = op.parse!
 # TODO: Analize the options inserted and do something with them
 # p options
 
-num_missing = 6 - opts.length
+num_missing = 5 - opts.length
 if num_missing > 0
   puts 'Missing %d required argument(s)' % [num_missing]
   puts
@@ -67,9 +71,53 @@ end
 username = opts[0]
 access_key = opts[1]
 local_host = opts[2]
-local_port = Integer(opts[3])
-remote_port = Integer(opts[4])
-domains = opts[5..-1]
+ports = Array.new
+for pair in opts[3].split(",")
+  if not pair.include? ":"
+    puts 'Incorrect port syntax: %s' % [pair]
+    puts
+    puts op
+    exit
+  end
+  pair = pair.split(":").collect {|i| Integer(i)}
+  ports << pair
+end
+domains = opts[4..-1].join(",").split(",")
+
+#puts ports.length
+#puts domains
+#exit
+
+if options[:diagnostic]
+  errors = Array.new
+  # Checking domains to forward
+  for domain in domains
+    if not domain =~ /^([\da-z\.-]+)\.([a-z\.]{2,6})$/
+      errors << "Incorrect domain given: %s" % [domain]
+    end
+  end
+  # Checking if host is accesible
+  require 'socket'
+  for pair in ports
+    begin
+      s = TCPSocket.open(local_host, pair[0])
+    rescue Errno::ECONNREFUSED => e
+      errors << "Problem connecting to %s:%s: %s" % [local_host, pair[0], e.message]
+    rescue SocketError
+      errors << "Local host %s is not accessible" % local_host
+      break
+    end
+  end
+
+  if errors.empty?
+    puts "No errors found, proceeeding"
+  else
+    puts "Errors found:"
+    puts errors.collect {|e| "\t"+e}
+    exit
+  end
+
+end
 
 sauce = SauceREST::Client.new "https://#{username}:#{access_key}@saucelabs.com/rest/#{username}/"
 
@@ -154,16 +202,18 @@ begin
 
   gateway = Net::SSH::Gateway.new(tunnel['Host'], username,
                                   {:password => access_key})
-  gateway.open_remote(local_port, local_host, remote_port, "0.0.0.0") do |rp, rh|
-    puts "ssh remote tunnel opened"
-    if options.has_key?(:readyfile) 
-      File.open( options[:readyfile], "w" ) do |the_file|
-        the_file.puts "ready"
-      end 
+  for pair in ports
+    gateway.open_remote(pair[0], local_host, pair[1], "0.0.0.0") do |rp, rh|
+      puts "ssh remote tunnel opened"
     end
-    # instead of sleeping, you could launch your tests here
-    sleep 1500
   end
+  if options.has_key?(:readyfile) 
+    File.open( options[:readyfile], "w" ) do |the_file|
+      the_file.puts "ready"
+    end 
+  end
+  # instead of sleeping, you could launch your tests here
+  sleep 1500
   gateway.shutdown!
 rescue Interrupt
   nil
