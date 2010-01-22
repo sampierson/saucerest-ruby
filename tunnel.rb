@@ -42,15 +42,15 @@ op = OptionParser.new do |opts|
 #    options[:pidfile] = p
 #  end
 
-  opts.on("-r", "--readyfile FILE", "create FILE when the tunnel is ready") do |r| 
+  opts.on("-r", "--readyfile FILE", "create FILE when the tunnel is ready") do |r|
     options[:readyfile] = r
   end
 
-  opts.on("-s", "--shutdown", "shutdown any existing tunnel machines using one or more requested domain names") do |s| 
+  opts.on("-s", "--shutdown", "shutdown any existing tunnel machines using one or more requested domain names") do |s|
     options[:shutdown] = s
   end
 
-  opts.on("--diagnostic", "using this option, we will run a set of tests to make sure the arguments given are correct. If all works, will open the tunnels in debug mode") do |d| 
+  opts.on("--diagnostic", "using this option, we will run a set of tests to make sure the arguments given are correct. If all works, will open the tunnels in debug mode") do |d|
     options[:diagnostic] = d
   end
 end
@@ -130,7 +130,7 @@ if options[:shutdown]
         puts "tunnel %s is currenty using requested domain %s" % [
           tunnel['_id'], domain]
         puts "shutting down tunnel %s" % tunnel['_id']
-        sauce.delete :tunnel, tunnel['_id'] 
+        sauce.delete :tunnel, tunnel['_id']
       end
     end
   end
@@ -177,7 +177,7 @@ puts "Launching tunnel machine..."
 response = sauce.create(:tunnel,
                         'DomainNames' => domains)
 
-if  response.has_key? 'error' 
+if response.has_key? 'error'
   puts "Error: %s" % [response['error']]
   exit
 end
@@ -202,22 +202,25 @@ begin
 
   gateway = Net::SSH::Gateway.new(tunnel['Host'], username,
                                   {:password => access_key})
-  for pair in ports
-    gateway.open_remote(pair[0], local_host, pair[1], "0.0.0.0") do |rp, rh|
-      puts "ssh remote tunnel opened"
+  begin
+    for pair in ports
+      gateway.open_remote(pair[0], local_host, pair[1], "0.0.0.0") do |rp, rh|
+        puts "ssh remote tunnel opened"
+        if options.has_key?(:readyfile)
+          File.open(options[:readyfile], "w") do |the_file|
+            the_file.puts "ready"
+          end
+        end
+        while true
+          sleep 1
+        end
+      end
     end
+  ensure
+    gateway.shutdown!
   end
-  if options.has_key?(:readyfile) 
-    File.open( options[:readyfile], "w" ) do |the_file|
-      the_file.puts "ready"
-    end 
-  end
-  # instead of sleeping, you could launch your tests here
-  sleep 1500
-  gateway.shutdown!
 rescue Interrupt
   nil
-
 ensure
   puts "Aborted -- shutting down tunnel machine"
   sauce.delete :tunnel, tunnel_id
