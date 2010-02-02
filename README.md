@@ -4,8 +4,17 @@ SauceREST for Ruby
 This is a Ruby library and some command line tools for interacting
 with the SauceREST API.
 
-Here are some useful command line tools:
+Requirements
+------------
 
+For the scripts to run, you need to first install:
+
+* net-ssh
+* net-ssh-gateway
+* rest-client
+
+
+Here are some useful command line tools:
 
 tunnel.rb
 ---------
