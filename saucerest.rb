@@ -20,7 +20,7 @@ module SauceREST
 
     def create type, *args
       doc = args[-1]
-      doc_json = JSON.generate doc
+      doc_json = doc.to_json
       resp_json = @resource[@@roots[type]].post(doc_json,
                                                 :content_type =>
                                                 'application/octet-stream')
